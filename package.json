@@ -7,6 +7,10 @@
    "dependencies" : {
      "express"    : "latest",
      "request"    : "latest",
-     "cheerio"    : "latest"
+     "cheerio"    : "latest",
+     "string"     : "latest",
+     "moment"     : "latest",
+     "extend"     : "latest",
+     "underscore" : "latest"
    }
  }

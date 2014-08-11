@@ -2,43 +2,72 @@ var express = require('express');
 var fs = require('fs');
 var request = require('request');
 var cheerio = require('cheerio');
-var app     = express();
+var $s = require('string');
+var moment = require('moment');
+var extend = require('extend');
+var _ = require('underscore');
+var app = express();
 
-app.get('/scrape', function(req, res){
-	
-	url = 'http://fantasy.premierleague.com/stats/elements/?element_filter=0&stat_filter=total_points';
+const apiTemplate = 'http://fantasy.premierleague.com/stats/elements/'
+                  + '?element_filter={{elementFilter}}'
+                  + '&stat_filter={{statFilter}}'
+                  + '&page={{page}}';
 
-	request(url, function(error, response, html){
+function scrapeFantasyFootballData(url, callback) {
+    var json = {};
+
+    request(url, function(error, response, html){
 		if(!error){
 			var $page = cheerio.load(html);
 
 			var title, release, rating;
-			var json = {};
+
+			function rowMapper($row) {
+                return {
+                    selectedBy : $row.find(':nth-child(6)').text(),
+                    price: $row.find(':nth-child(7)').text(),
+                    gameWeekScore: $row.find(':nth-child(8)').text(),
+                    totalScore: $row.find(':nth-child(9)').text()
+                }
+            };
 
 			$page('.ismTable tbody tr').filter(function(){
 		        var $row = $page(this);
 		        var name = $row.find(':nth-child(3)').text();
-		        json[name] = {
-		             selectedBy : $row.find(':nth-child(6)').text(),
-                     price: $row.find(':nth-child(7)').text(),
-                     gameWeekScore: $row.find(':nth-child(8)').text(),
-                     totalScore: $row.find(':nth-child(9)').text()
-		        };
-	        })
+		        json[name] = rowMapper($row);
+	        });
+
+	        callback(json);
 		}
-        // To write to the system we will use the built in 'fs' library.
-        // In this example we will pass 3 parameters to the writeFile function
-        // Parameter 1 :  output.json - this is what the created filename will be called
-        // Parameter 2 :  JSON.stringify(json, null, 4) - the data to write, here we do an extra step by calling JSON.stringify to make our JSON easier to read
-        // Parameter 3 :  callback function - a callback function to let us know the status of our function
+	});
+};
 
-        fs.writeFile('output.json', JSON.stringify(json, null, 4), function(err){
-        	console.log('File successfully written! - Check your project directory for the output.json file');
-        })
+app.get('/scrape', function(req, res){
+    var args = {elementFilter: '0', statFilter: 'total_points', page: 1};
+	totalPointsPage1Url = $s(apiTemplate).template(args).s;
+	args['page'] = 2;
+	totalPointsPage2Url = $s(apiTemplate).template(args).s;
 
-        // Finally, we'll just send out a message to the browser reminding you that this app does not have a UI.
-        res.send('Check your console!')
-	})
+	var outputFileName = args.statFilter + '_' + moment().format('YYYY-MM-DD') + '.json';
+	var completeResult = {};
+	saveResult = _.after(2, function () {
+        var humanReadableJson = JSON.stringify(completeResult, null, 4);
+        fs.appendFile(outputFileName, humanReadableJson, function(err){
+            console.log('File successfully written! - Check your project directory for the '+outputFileName+' file');
+        });
+    });
+
+    scrapeFantasyFootballData(totalPointsPage1Url, function (json) {
+        extend(completeResult, json);
+        saveResult();
+    });
+    scrapeFantasyFootballData(totalPointsPage2Url, function (json) {
+        extend(completeResult, json);
+        saveResult();
+    });
+
+    // Finally, we'll just send out a message to the browser reminding you that this app does not have a UI.
+    res.send('Processing...')
 })
 
 app.listen('8081')
