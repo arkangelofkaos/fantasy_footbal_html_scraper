@@ -18,3 +18,4 @@ Limitations
 * The results are not sorted.
 * Output directory cannot be specified.
 * Previous data from the same day will be overwritten.
+* We pull down all stats, user unable to specify specific stats only.
