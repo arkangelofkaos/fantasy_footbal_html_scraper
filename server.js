@@ -1,4 +1,3 @@
-var express = require('express');
 var fs = require('fs');
 var request = require('request');
 var cheerio = require('cheerio');
@@ -6,70 +5,102 @@ var $s = require('string');
 var moment = require('moment');
 var extend = require('extend');
 var _ = require('underscore');
-var app = express();
+
+function calculateHeaders($page) {
+    var columnHeaders = {};
+    $page('#ism .ismTable thead tr th').each(function(index, element){
+        var columnHeader = $page(element).text();
+        if (columnHeader) columnHeaders[columnHeader] = index + 1;
+    });
+    return columnHeaders;
+}
+
+function rowMapper($row, columnHeaderToNumberMap) {
+    var jsonNode = {};
+    _.pairs(columnHeaderToNumberMap).forEach(function(pair){
+        var key = pair[0];
+        var columnNumber = pair[1];
+        jsonNode[key] = $row.find(':nth-child(' + columnNumber + ')').text();
+    });
+    return jsonNode;
+};
+
+function extractPlayerInformation($page, columnHeaderToNumberMap) {
+    var json = {};
+    $page('.ismTable tbody tr').filter(function(){
+        var $row = $page(this);
+        var name = $row.find(':nth-child(3)').text() + '-' + $row.find(':nth-child(4)').text();
+        json[name] = rowMapper($row, columnHeaderToNumberMap);
+    });
+    return json;
+}
+
+function scrapeDataFromUrlToJson(url, callback) {
+    request(url, function(error, response, html){
+		if(!error){
+			var $page = cheerio.load(html);
+            var columnHeaderToNumberMap = calculateHeaders($page);
+            var json = extractPlayerInformation($page, columnHeaderToNumberMap);
+	        callback(json);
+		}
+	});
+};
+
+function persist(stat, result) {
+    return function() {
+        var humanReadableJson = JSON.stringify(result, null, 4);
+        var dateNow = moment().format('YYYY-MM-DD');
+        var directory = dateNow + '-data/';
+        var outputFileName = stat + '_' + dateNow + '.json';
+
+        var outputPath = directory + outputFileName;
+        fs.mkdir(directory, function(err) {
+            // ignore errors
+        });
+        fs.writeFile(outputPath, humanReadableJson, function(err){
+            if (err) {
+                console.error(err);
+            } else {
+                console.log('File successfully written! - Check your project directory for the ' + outputPath + ' file');
+            }
+        });
+    }
+};
 
 const apiTemplate = 'http://fantasy.premierleague.com/stats/elements/'
                   + '?element_filter={{elementFilter}}'
                   + '&stat_filter={{statFilter}}'
                   + '&page={{page}}';
 
-function scrapeFantasyFootballData(url, callback) {
-    var json = {};
+function downloadFantasyFootballData(stat, numberOfDataPages) {
+    const completeResult = {};
+    const saveResult = _.after(numberOfDataPages, persist(stat, completeResult));
 
-    request(url, function(error, response, html){
-		if(!error){
-			var $page = cheerio.load(html);
+    for (pageNumber = 1; pageNumber <= numberOfDataPages; pageNumber++) {
+        var args = {elementFilter: '0', statFilter: stat, page: pageNumber};
+    	url = $s(apiTemplate).template(args).s;
+        scrapeDataFromUrlToJson(url, function (json) {
+            extend(completeResult, json);
+            saveResult();
+        });
+    }
+}
 
-			var title, release, rating;
+const stats = [
+    'total_points', 'event_points', 'now_cost', 'selected_by_percent', 'minutes',
+    'goals_scored', 'assists', 'clean_sheets', 'goals_conceded', 'own_goals',
+    'penalties_saved', 'penalties_missed', 'yellow_cards', 'red_cards', 'saves',
+    'bonus', 'ea_index', 'bps', 'form', 'dreamteam_count', 'value_form', 'value_season',
+    'points_per_game', 'transfers_in', 'transfers_out', 'transfers_in_event', 'transfers_out_event',
+    'cost_change_start', 'cost_change_start_fall', 'cost_change_event', 'cost_change_event_fall'
+];
 
-			function rowMapper($row) {
-                return {
-                    selectedBy : $row.find(':nth-child(6)').text(),
-                    price: $row.find(':nth-child(7)').text(),
-                    gameWeekScore: $row.find(':nth-child(8)').text(),
-                    totalScore: $row.find(':nth-child(9)').text()
-                }
-            };
-
-			$page('.ismTable tbody tr').filter(function(){
-		        var $row = $page(this);
-		        var name = $row.find(':nth-child(3)').text();
-		        json[name] = rowMapper($row);
-	        });
-
-	        callback(json);
-		}
-	});
+var numberOfDataPages = 10;
+function scrape() {
+    _.each(stats, function(stat) {
+        downloadFantasyFootballData(stat, numberOfDataPages);
+    });
 };
 
-app.get('/scrape', function(req, res){
-    var args = {elementFilter: '0', statFilter: 'total_points', page: 1};
-	totalPointsPage1Url = $s(apiTemplate).template(args).s;
-	args['page'] = 2;
-	totalPointsPage2Url = $s(apiTemplate).template(args).s;
-
-	var outputFileName = args.statFilter + '_' + moment().format('YYYY-MM-DD') + '.json';
-	var completeResult = {};
-	saveResult = _.after(2, function () {
-        var humanReadableJson = JSON.stringify(completeResult, null, 4);
-        fs.appendFile(outputFileName, humanReadableJson, function(err){
-            console.log('File successfully written! - Check your project directory for the '+outputFileName+' file');
-        });
-    });
-
-    scrapeFantasyFootballData(totalPointsPage1Url, function (json) {
-        extend(completeResult, json);
-        saveResult();
-    });
-    scrapeFantasyFootballData(totalPointsPage2Url, function (json) {
-        extend(completeResult, json);
-        saveResult();
-    });
-
-    // Finally, we'll just send out a message to the browser reminding you that this app does not have a UI.
-    res.send('Processing...')
-})
-
-app.listen('8081')
-console.log('Magic happens on port 8081');
-exports = module.exports = app;
+console.log('Scraping Fantasy Football data...');
+scrape();

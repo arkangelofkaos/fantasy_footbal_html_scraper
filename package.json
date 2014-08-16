@@ -1,11 +1,10 @@
  {
    "name"         : "fantasy-football-html-scraper",
-   "version"      : "0.0.1",
-   "description"  : "Scrape Fantasy Football data from the website",
+   "version"      : "0.1.0",
+   "description"  : "Scrape Fantasy Football data from fantasy.premierleague.com/stats",
    "main"         : "server.js",
    "author"       : "arkangelofkaos",
    "dependencies" : {
-     "express"    : "latest",
      "request"    : "latest",
      "cheerio"    : "latest",
      "string"     : "latest",
